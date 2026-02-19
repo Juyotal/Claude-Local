@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .db import dispose_engine, init_db, init_engine
-from .routers import health
+from .routers import conversations, health, models
 
 
 @asynccontextmanager
@@ -35,3 +35,5 @@ app.add_middleware(
 )
 
 app.include_router(health.router)
+app.include_router(models.router)
+app.include_router(conversations.router)
