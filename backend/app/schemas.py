@@ -64,3 +64,13 @@ class ConversationDetail(BaseModel):
 
 class MessageCreate(BaseModel):
     content: str
+    attachment_ids: list[str] = []
+
+
+class AttachmentOut(BaseModel):
+    id: str
+    filename: str
+    media_type: str
+    size_bytes: int
+
+    model_config = {"from_attributes": True}
