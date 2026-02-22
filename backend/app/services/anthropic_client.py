@@ -1,8 +1,11 @@
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator, Union
 
 from anthropic import AsyncAnthropic
 
 from app.config import settings
+
+MessageContent = Union[str, list[dict[str, Any]]]
+ChatMessage = dict[str, Any]  # {"role": "user" | "assistant", "content": MessageContent}
 
 SUPPORTED_MODELS: list[dict] = [
     {"id": "claude-opus-4-7", "label": "Claude Opus 4.7"},
@@ -24,11 +27,17 @@ def get_client() -> AsyncAnthropic:
 
 
 async def stream_chat(
-    messages: list[dict],
+    messages: list[ChatMessage],
     model: str,
     system: str | None = None,
     max_tokens: int = 4096,
 ) -> AsyncGenerator[dict, None]:
+    """Stream a chat completion.
+
+    Each message's ``content`` may be a plain string (text-only turn) or a
+    list of Anthropic content blocks (image / document / text). The Anthropic
+    SDK accepts both shapes, so we pass them through untouched.
+    """
     client = get_client()
     kwargs: dict = {"model": model, "max_tokens": max_tokens, "messages": messages}
     if system:
