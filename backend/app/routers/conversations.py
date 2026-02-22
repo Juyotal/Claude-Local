@@ -6,10 +6,11 @@ from typing import Optional
 from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from sse_starlette.sse import EventSourceResponse
 
 from app.db import SessionLocal, get_session
-from app.models import Conversation, Message
+from app.models import Attachment, Conversation, Message
 from app.schemas import (
     ConversationCreate,
     ConversationDetail,
@@ -19,6 +20,7 @@ from app.schemas import (
     MessageOut,
 )
 from app.services.anthropic_client import get_client, stream_chat
+from app.services.message_builder import build_anthropic_content
 
 router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 
@@ -180,6 +182,32 @@ async def send_message(
     if conv is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
+    # Validate + claim any attachments the user referenced.
+    new_attachments: list[Attachment] = []
+    if body.attachment_ids:
+        seen: set[str] = set()
+        ordered_ids: list[str] = []
+        for aid in body.attachment_ids:
+            if aid not in seen:
+                seen.add(aid)
+                ordered_ids.append(aid)
+        found_result = await session.execute(
+            select(Attachment).where(Attachment.id.in_(ordered_ids))
+        )
+        by_id = {a.id: a for a in found_result.scalars().all()}
+        for aid in ordered_ids:
+            att = by_id.get(aid)
+            if att is None:
+                raise HTTPException(
+                    status_code=400, detail=f"Attachment {aid} not found"
+                )
+            if att.message_id is not None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Attachment {aid} is already attached to a message",
+                )
+            new_attachments.append(att)
+
     count_result = await session.execute(
         select(func.count())
         .select_from(Message)
@@ -189,6 +217,10 @@ async def send_message(
 
     user_msg = Message(conversation_id=conversation_id, role="user", content=body.content)
     session.add(user_msg)
+    # Flush so user_msg.id is assigned before we link attachments to it.
+    await session.flush()
+    for att in new_attachments:
+        att.message_id = user_msg.id
 
     if is_first_user_message and conv.title == "New conversation":
         conv.title = body.content[:40].strip()
@@ -200,10 +232,16 @@ async def send_message(
         select(Message)
         .where(Message.conversation_id == conversation_id)
         .order_by(Message.created_at)
+        .options(selectinload(Message.attachments))
     )
-    history = [
-        {"role": m.role, "content": m.content} for m in msgs_result.scalars().all()
-    ]
+    history: list[dict] = []
+    for m in msgs_result.scalars().all():
+        if m.role == "user" and m.attachments:
+            ordered = sorted(m.attachments, key=lambda a: a.created_at)
+            blocks = build_anthropic_content(m.content, ordered)
+            history.append({"role": m.role, "content": blocks})
+        else:
+            history.append({"role": m.role, "content": m.content})
 
     assistant_msg = Message(conversation_id=conversation_id, role="assistant", content="")
     session.add(assistant_msg)
