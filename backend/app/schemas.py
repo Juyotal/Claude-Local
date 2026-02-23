@@ -40,11 +40,23 @@ class ConversationOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class CitationOut(BaseModel):
+    id: str
+    url: str
+    title: Optional[str]
+    cited_text: Optional[str]
+    start_index: Optional[int]
+    end_index: Optional[int]
+
+    model_config = {"from_attributes": True}
+
+
 class MessageOut(BaseModel):
     id: str
     role: str
     content: str
     created_at: datetime
+    citations: list[CitationOut] = []
 
     model_config = {"from_attributes": True}
 
