@@ -48,6 +48,9 @@ class Message(Base):
     attachments: Mapped[list["Attachment"]] = relationship(
         "Attachment", back_populates="message", cascade="all, delete-orphan"
     )
+    citations: Mapped[list["MessageCitation"]] = relationship(
+        "MessageCitation", back_populates="message", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (Index("ix_messages_conversation_id", "conversation_id"),)
 
@@ -70,3 +73,22 @@ class Attachment(Base):
     )
 
     __table_args__ = (Index("ix_attachments_message_id", "message_id"),)
+
+
+class MessageCitation(Base):
+    __tablename__ = "message_citations"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    message_id: Mapped[str] = mapped_column(
+        String, ForeignKey("messages.id", ondelete="CASCADE"), nullable=False
+    )
+    url: Mapped[str] = mapped_column(String, nullable=False)
+    title: Mapped[str | None] = mapped_column(String, nullable=True)
+    cited_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    start_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    end_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=_now)
+
+    message: Mapped["Message"] = relationship("Message", back_populates="citations")
+
+    __table_args__ = (Index("ix_message_citations_message_id", "message_id"),)
