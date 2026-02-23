@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     DB_PATH: str = "./data/app.db"
     CORS_ORIGINS: str = "http://localhost:3000"
     MAX_UPLOAD_BYTES: int = 26214400  # 25 MB
+    WEB_SEARCH_MAX_USES: int = 5
 
     @property
     def cors_origins_list(self) -> list[str]:
