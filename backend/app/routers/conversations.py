@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sse_starlette.sse import EventSourceResponse
 
+from app.config import settings
 from app.db import SessionLocal, get_session
 from app.models import Attachment, Conversation, Message
 from app.schemas import (
@@ -250,13 +251,22 @@ async def send_message(
     assistant_id = assistant_msg.id
     model = conv.model
     system_prompt = conv.system_prompt
+    tools = None
+    if conv.web_search_enabled:
+        tools = [
+            {
+                "type": "web_search_20250305",
+                "name": "web_search",
+                "max_uses": settings.WEB_SEARCH_MAX_USES,
+            }
+        ]
 
     async def event_generator():
         yield {"event": "message_start", "data": json.dumps({"message_id": assistant_id})}
 
         full_content = ""
         try:
-            async for chunk in stream_chat(history, model, system_prompt):
+            async for chunk in stream_chat(history, model, system_prompt, tools=tools):
                 if chunk["type"] == "delta":
                     full_content += chunk["text"]
                     yield {"event": "delta", "data": json.dumps({"text": chunk["text"]})}
