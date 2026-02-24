@@ -296,11 +296,32 @@ async def send_message(
             }
         ]
 
+    async def _persist(full_content: str, citations: list[dict]) -> None:
+        if SessionLocal is None:
+            return
+        async with SessionLocal() as save_session:
+            row = await save_session.get(Message, assistant_id)
+            if row is not None:
+                row.content = full_content
+                for cit in citations:
+                    save_session.add(
+                        MessageCitation(
+                            message_id=assistant_id,
+                            url=cit["url"] or "",
+                            title=cit.get("title"),
+                            cited_text=cit.get("cited_text"),
+                            start_index=cit.get("start_index"),
+                            end_index=cit.get("end_index"),
+                        )
+                    )
+                await save_session.commit()
+
     async def event_generator():
         yield {"event": "message_start", "data": json.dumps({"message_id": assistant_id})}
 
         full_content = ""
         collected_citations: list[dict] = []
+        persisted = False
         try:
             async for chunk in stream_chat(history, model, system_prompt, tools=tools):
                 if chunk["type"] == "delta":
@@ -329,6 +350,12 @@ async def send_message(
                         }),
                     }
                 elif chunk["type"] == "usage":
+                    # Persist before the final event so the write completes while the
+                    # stream is still active. Once the client reads message_stop the
+                    # connection drops, and sse_starlette cancels this generator — any
+                    # DB work in ``finally`` would be cancelled with it.
+                    await _persist(full_content, collected_citations)
+                    persisted = True
                     yield {
                         "event": "message_stop",
                         "data": json.dumps({
@@ -344,22 +371,10 @@ async def send_message(
         except Exception as exc:
             yield {"event": "error", "data": json.dumps({"message": str(exc)})}
         finally:
-            if SessionLocal is not None:
-                async with SessionLocal() as save_session:
-                    row = await save_session.get(Message, assistant_id)
-                    if row is not None:
-                        row.content = full_content
-                    for cit in collected_citations:
-                        save_session.add(
-                            MessageCitation(
-                                message_id=assistant_id,
-                                url=cit["url"] or "",
-                                title=cit.get("title"),
-                                cited_text=cit.get("cited_text"),
-                                start_index=cit.get("start_index"),
-                                end_index=cit.get("end_index"),
-                            )
-                        )
-                    await save_session.commit()
+            if not persisted:
+                try:
+                    await _persist(full_content, collected_citations)
+                except Exception:
+                    pass
 
     return EventSourceResponse(event_generator())
