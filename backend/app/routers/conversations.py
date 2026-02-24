@@ -11,8 +11,9 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.config import settings
 from app.db import SessionLocal, get_session
-from app.models import Attachment, Conversation, Message
+from app.models import Attachment, Conversation, Message, MessageCitation
 from app.schemas import (
+    CitationOut,
     ConversationCreate,
     ConversationDetail,
     ConversationOut,
@@ -91,6 +92,7 @@ async def get_conversation(
         select(Message)
         .where(Message.conversation_id == conversation_id)
         .order_by(Message.created_at)
+        .options(selectinload(Message.citations))
     )
     messages = msgs_result.scalars().all()
 
@@ -103,7 +105,23 @@ async def get_conversation(
         created_at=conv.created_at,
         updated_at=conv.updated_at,
         messages=[
-            MessageOut(id=m.id, role=m.role, content=m.content, created_at=m.created_at)
+            MessageOut(
+                id=m.id,
+                role=m.role,
+                content=m.content,
+                created_at=m.created_at,
+                citations=[
+                    CitationOut(
+                        id=c.id,
+                        url=c.url,
+                        title=c.title,
+                        cited_text=c.cited_text,
+                        start_index=c.start_index,
+                        end_index=c.end_index,
+                    )
+                    for c in sorted(m.citations, key=lambda c: c.created_at)
+                ],
+            )
             for m in messages
         ],
     )
@@ -135,6 +153,7 @@ async def update_conversation(
         select(Message)
         .where(Message.conversation_id == conversation_id)
         .order_by(Message.created_at)
+        .options(selectinload(Message.citations))
     )
     messages = msgs_result.scalars().all()
 
@@ -147,7 +166,23 @@ async def update_conversation(
         created_at=conv.created_at,
         updated_at=conv.updated_at,
         messages=[
-            MessageOut(id=m.id, role=m.role, content=m.content, created_at=m.created_at)
+            MessageOut(
+                id=m.id,
+                role=m.role,
+                content=m.content,
+                created_at=m.created_at,
+                citations=[
+                    CitationOut(
+                        id=c.id,
+                        url=c.url,
+                        title=c.title,
+                        cited_text=c.cited_text,
+                        start_index=c.start_index,
+                        end_index=c.end_index,
+                    )
+                    for c in sorted(m.citations, key=lambda c: c.created_at)
+                ],
+            )
             for m in messages
         ],
     )
@@ -265,6 +300,7 @@ async def send_message(
         yield {"event": "message_start", "data": json.dumps({"message_id": assistant_id})}
 
         full_content = ""
+        collected_citations: list[dict] = []
         try:
             async for chunk in stream_chat(history, model, system_prompt, tools=tools):
                 if chunk["type"] == "delta":
@@ -279,6 +315,18 @@ async def send_message(
                     yield {
                         "event": "tool_result",
                         "data": json.dumps({"tool": chunk["tool"], "result_count": chunk["result_count"]}),
+                    }
+                elif chunk["type"] == "citation":
+                    collected_citations.append(chunk)
+                    yield {
+                        "event": "citation",
+                        "data": json.dumps({
+                            "url": chunk["url"],
+                            "title": chunk["title"],
+                            "cited_text": chunk["cited_text"],
+                            "start_index": chunk["start_index"],
+                            "end_index": chunk["end_index"],
+                        }),
                     }
                 elif chunk["type"] == "usage":
                     yield {
@@ -301,6 +349,17 @@ async def send_message(
                     row = await save_session.get(Message, assistant_id)
                     if row is not None:
                         row.content = full_content
-                        await save_session.commit()
+                    for cit in collected_citations:
+                        save_session.add(
+                            MessageCitation(
+                                message_id=assistant_id,
+                                url=cit["url"] or "",
+                                title=cit.get("title"),
+                                cited_text=cit.get("cited_text"),
+                                start_index=cit.get("start_index"),
+                                end_index=cit.get("end_index"),
+                            )
+                        )
+                    await save_session.commit()
 
     return EventSourceResponse(event_generator())
