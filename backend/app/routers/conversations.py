@@ -270,6 +270,16 @@ async def send_message(
                 if chunk["type"] == "delta":
                     full_content += chunk["text"]
                     yield {"event": "delta", "data": json.dumps({"text": chunk["text"]})}
+                elif chunk["type"] == "tool_use":
+                    yield {
+                        "event": "tool_use",
+                        "data": json.dumps({"tool": chunk["tool"], "query": chunk["query"]}),
+                    }
+                elif chunk["type"] == "tool_result":
+                    yield {
+                        "event": "tool_result",
+                        "data": json.dumps({"tool": chunk["tool"], "result_count": chunk["result_count"]}),
+                    }
                 elif chunk["type"] == "usage":
                     yield {
                         "event": "message_stop",
