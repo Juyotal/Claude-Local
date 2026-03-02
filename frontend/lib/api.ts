@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { streamSSE } from "@/lib/sse";
+import type { SSEEvent } from "@/lib/sse";
 import {
   AttachmentOutSchema,
   ConversationDetailSchema,
@@ -77,15 +79,19 @@ export async function deleteConversation(id: string): Promise<void> {
   }
 }
 
-// ── Messages (stub — real impl in Deliverable 6) ─────────────────────────────
+// ── Messages ─────────────────────────────────────────────────────────────────
 
 export function sendMessage(
-  _conversationId: string,
-  _content: string,
-  _attachmentIds?: string[]
-): never {
-  console.log("sendMessage: Coming in Deliverable 6");
-  throw new Error("Coming in Deliverable 6");
+  conversationId: string,
+  content: string,
+  attachmentIds?: string[],
+  signal?: AbortSignal
+): AsyncGenerator<SSEEvent> {
+  return streamSSE(
+    `${BASE_URL}/api/conversations/${conversationId}/messages`,
+    { content, attachment_ids: attachmentIds ?? [] },
+    signal
+  );
 }
 
 // ── Uploads (stubs — real impl in Deliverable 7) ─────────────────────────────
