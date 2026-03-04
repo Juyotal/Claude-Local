@@ -60,6 +60,16 @@ export default function Sidebar() {
     void reload();
   }, [reload]);
 
+  // Refresh when ChatPane signals a title change (e.g. auto-title after first message)
+  useEffect(() => {
+    function onConversationUpdated() {
+      void reload();
+    }
+    window.addEventListener("conversation-updated", onConversationUpdated);
+    return () =>
+      window.removeEventListener("conversation-updated", onConversationUpdated);
+  }, [reload]);
+
   async function handleNew() {
     try {
       const conv = await createConversation();

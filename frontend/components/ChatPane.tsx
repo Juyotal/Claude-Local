@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { Globe } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import ModelPicker from "@/components/ModelPicker";
@@ -8,6 +8,7 @@ import SystemPromptEditor from "@/components/SystemPromptEditor";
 import MessageList from "@/components/MessageList";
 import Composer from "@/components/Composer";
 import { updateConversation } from "@/lib/api";
+import { useChat } from "@/lib/useChat";
 import type { ConversationDetail } from "@/types/api";
 
 interface Props {
@@ -16,6 +17,10 @@ interface Props {
 
 export default function ChatPane({ conversation: initial }: Props) {
   const [conv, setConv] = useState(initial);
+  const { messages, isStreaming, send, stop, retry } = useChat(
+    conv.id,
+    initial.messages
+  );
 
   function handleModelChange(model: string) {
     setConv((c) => ({ ...c, model }));
@@ -35,15 +40,24 @@ export default function ChatPane({ conversation: initial }: Props) {
     }
   }
 
+  const handleSend = useCallback(
+    async (content: string) => {
+      const newTitle = await send(content);
+      if (newTitle) {
+        setConv((c) => ({ ...c, title: newTitle }));
+        // Signal Sidebar to refresh its conversation list
+        window.dispatchEvent(new CustomEvent("conversation-updated"));
+      }
+    },
+    [send]
+  );
+
   return (
     <div className="flex flex-col flex-1 min-h-0 bg-background">
       {/* Header */}
       <header className="flex items-center gap-2 px-4 py-2.5 border-b border-border shrink-0">
         <div className="flex-1 min-w-0">
-          <h1
-            className="text-sm font-medium truncate"
-            title={conv.title}
-          >
+          <h1 className="text-sm font-medium truncate" title={conv.title}>
             {conv.title}
           </h1>
         </div>
@@ -71,10 +85,14 @@ export default function ChatPane({ conversation: initial }: Props) {
       </header>
 
       {/* Messages */}
-      <MessageList messages={conv.messages} />
+      <MessageList
+        messages={messages}
+        isStreaming={isStreaming}
+        onRetry={() => void retry()}
+      />
 
       {/* Composer */}
-      <Composer conversationId={conv.id} />
+      <Composer isStreaming={isStreaming} onSend={handleSend} onStop={stop} />
     </div>
   );
 }
