@@ -1,3 +1,4 @@
+/// <reference types="vitest/globals" />
 import "@testing-library/jest-dom";
 
 // Mock navigator.clipboard for CodeBlock tests

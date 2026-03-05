@@ -37,14 +37,6 @@ export function useChat(conversationId: string, initialMessages: MessageOut[]) {
     abortRef.current?.abort();
   }, []);
 
-  const retry = useCallback(async (): Promise<string | null> => {
-    const content = lastUserContentRef.current;
-    if (!content || isStreaming) return null;
-    // Remove the error assistant bubble and the preceding user message
-    setMessages((prev) => prev.slice(0, -2));
-    return send(content); // eslint-disable-line @typescript-eslint/no-use-before-define
-  }, [isStreaming]); // send added below via ref trick; we suppress the lint warning intentionally
-
   const send = useCallback(
     async (content: string): Promise<string | null> => {
       if (isStreaming || !content.trim()) return null;
@@ -156,6 +148,14 @@ export function useChat(conversationId: string, initialMessages: MessageOut[]) {
     },
     [conversationId, isStreaming]
   );
+
+  // Retry the last failed message: remove the error bubble + user message, resend
+  const retry = useCallback(async (): Promise<string | null> => {
+    const content = lastUserContentRef.current;
+    if (!content || isStreaming) return null;
+    setMessages((prev) => prev.slice(0, -2));
+    return send(content);
+  }, [isStreaming, send]);
 
   return { messages, isStreaming, send, stop, retry };
 }

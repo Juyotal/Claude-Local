@@ -140,7 +140,7 @@ export default function MessageList({ messages, isStreaming, onRetry }: Props) {
       {showJumpToBottom && (
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
           <Button
-            variant="secondary"
+            variant="outline"
             size="sm"
             onClick={() => {
               scrollToBottom("smooth");
