@@ -10,7 +10,8 @@ from sqlalchemy.orm import selectinload
 from sse_starlette.sse import EventSourceResponse
 
 from app.config import settings
-from app.db import SessionLocal, get_session
+from app import db
+from app.db import get_session
 from app.models import Attachment, Conversation, Message, MessageCitation
 from app.schemas import (
     CitationOut,
@@ -297,9 +298,9 @@ async def send_message(
         ]
 
     async def _persist(full_content: str, citations: list[dict]) -> None:
-        if SessionLocal is None:
+        if db.SessionLocal is None:
             return
-        async with SessionLocal() as save_session:
+        async with db.SessionLocal() as save_session:
             row = await save_session.get(Message, assistant_id)
             if row is not None:
                 row.content = full_content
@@ -376,5 +377,5 @@ async def send_message(
                     await _persist(full_content, collected_citations)
                 except Exception:
                     pass
-
+                
     return EventSourceResponse(event_generator())

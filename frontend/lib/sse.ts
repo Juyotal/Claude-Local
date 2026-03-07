@@ -39,12 +39,12 @@ export function parseSSEBuffer(buffer: string): {
   remaining: string;
 } {
   const blocks: RawSSEBlock[] = [];
-  const parts = buffer.split("\n\n");
-  // Last part is incomplete unless buffer ends with \n\n
+  // SSE spec allows \n\n, \r\n\r\n, or \r\r as event separators.
+  const parts = buffer.split(/\r\n\r\n|\n\n|\r\r/);
   const remaining = parts.pop() ?? "";
 
   for (const part of parts) {
-    const lines = part.split("\n").filter((l) => l.length > 0);
+    const lines = part.split(/\r\n|\n|\r/).filter((l) => l.length > 0);
     let event = "";
     let data = "";
     for (const line of lines) {
