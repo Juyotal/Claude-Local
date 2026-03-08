@@ -14,6 +14,7 @@ from app import db
 from app.db import get_session
 from app.models import Attachment, Conversation, Message, MessageCitation
 from app.schemas import (
+    AttachmentOut,
     CitationOut,
     ConversationCreate,
     ConversationDetail,
@@ -93,7 +94,7 @@ async def get_conversation(
         select(Message)
         .where(Message.conversation_id == conversation_id)
         .order_by(Message.created_at)
-        .options(selectinload(Message.citations))
+        .options(selectinload(Message.citations), selectinload(Message.attachments))
     )
     messages = msgs_result.scalars().all()
 
@@ -121,6 +122,15 @@ async def get_conversation(
                         end_index=c.end_index,
                     )
                     for c in sorted(m.citations, key=lambda c: c.created_at)
+                ],
+                attachments=[
+                    AttachmentOut(
+                        id=a.id,
+                        filename=a.filename,
+                        media_type=a.media_type,
+                        size_bytes=a.size_bytes,
+                    )
+                    for a in sorted(m.attachments, key=lambda a: a.created_at)
                 ],
             )
             for m in messages
@@ -154,7 +164,7 @@ async def update_conversation(
         select(Message)
         .where(Message.conversation_id == conversation_id)
         .order_by(Message.created_at)
-        .options(selectinload(Message.citations))
+        .options(selectinload(Message.citations), selectinload(Message.attachments))
     )
     messages = msgs_result.scalars().all()
 
@@ -182,6 +192,15 @@ async def update_conversation(
                         end_index=c.end_index,
                     )
                     for c in sorted(m.citations, key=lambda c: c.created_at)
+                ],
+                attachments=[
+                    AttachmentOut(
+                        id=a.id,
+                        filename=a.filename,
+                        media_type=a.media_type,
+                        size_bytes=a.size_bytes,
+                    )
+                    for a in sorted(m.attachments, key=lambda a: a.created_at)
                 ],
             )
             for m in messages

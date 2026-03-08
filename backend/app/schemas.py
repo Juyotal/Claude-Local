@@ -57,6 +57,7 @@ class MessageOut(BaseModel):
     content: str
     created_at: datetime
     citations: list[CitationOut] = []
+    attachments: list["AttachmentOut"] = []
 
     model_config = {"from_attributes": True}
 
