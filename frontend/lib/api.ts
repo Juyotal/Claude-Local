@@ -3,10 +3,12 @@ import { streamSSE } from "@/lib/sse";
 import type { SSEEvent } from "@/lib/sse";
 import {
   AttachmentOutSchema,
+  ConfigSchema,
   ConversationDetailSchema,
   ConversationOutSchema,
   ModelInfoSchema,
   type AttachmentOut,
+  type Config,
   type ConversationCreate,
   type ConversationDetail,
   type ConversationOut,
@@ -32,6 +34,12 @@ async function apiFetch<S extends z.ZodTypeAny>(
   }
   const json: unknown = await res.json();
   return schema.parse(json) as z.output<S>;
+}
+
+// ── Config ────────────────────────────────────────────────────────────────────
+
+export async function getConfig(): Promise<Config> {
+  return apiFetch("/api/config", ConfigSchema);
 }
 
 // ── Models ───────────────────────────────────────────────────────────────────
@@ -94,24 +102,53 @@ export function sendMessage(
   );
 }
 
-// ── Uploads (stubs — real impl in Deliverable 7) ─────────────────────────────
+// ── Uploads ──────────────────────────────────────────────────────────────────
 
-export async function uploadFile(
-  _conversationId: string,
-  _file: File
-): Promise<AttachmentOut> {
-  console.log("uploadFile: Coming in Deliverable 7");
-  return AttachmentOutSchema.parse({
-    id: "",
-    filename: _file.name,
-    media_type: _file.type,
-    size_bytes: _file.size,
+export async function uploadFile(file: File): Promise<AttachmentOut> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`${BASE_URL}/api/uploads`, {
+    method: "POST",
+    body: formData,
   });
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error(`API ${res.status}: ${text}`);
+  }
+  const json: unknown = await res.json();
+  return AttachmentOutSchema.parse(json);
 }
 
-export async function deleteUpload(
-  _conversationId: string,
-  _attachmentId: string
-): Promise<void> {
-  console.log("deleteUpload: Coming in Deliverable 7");
+export async function deleteUpload(attachmentId: string): Promise<void> {
+  const res = await fetch(`${BASE_URL}/api/uploads/${attachmentId}`, {
+    method: "DELETE",
+  });
+  // 404 means it was already cleaned up — treat as success
+  if (!res.ok && res.status !== 404) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error(`API ${res.status}: ${text}`);
+  }
+}
+
+// ── Health ────────────────────────────────────────────────────────────────────
+
+export async function getHealth(): Promise<{
+  status: string;
+  db: string;
+  anthropic_key_present: boolean;
+}> {
+  return apiFetch(
+    "/health",
+    z.object({
+      status: z.string(),
+      db: z.string(),
+      anthropic_key_present: z.boolean(),
+    })
+  );
+}
+
+// ── Attachments ───────────────────────────────────────────────────────────────
+
+export function attachmentUrl(attachmentId: string): string {
+  return `${BASE_URL}/api/attachments/${attachmentId}`;
 }

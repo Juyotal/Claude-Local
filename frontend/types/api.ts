@@ -8,6 +8,14 @@ export const ModelInfoSchema = z.object({
 });
 export type ModelInfo = z.infer<typeof ModelInfoSchema>;
 
+// ── Config ───────────────────────────────────────────────────────────────────
+
+export const ConfigSchema = z.object({
+  max_upload_bytes: z.number(),
+  supported_media_types: z.array(z.string()),
+});
+export type Config = z.infer<typeof ConfigSchema>;
+
 // ── Conversations ────────────────────────────────────────────────────────────
 
 export const ConversationOutSchema = z.object({
@@ -31,12 +39,21 @@ export const CitationOutSchema = z.object({
 });
 export type CitationOut = z.infer<typeof CitationOutSchema>;
 
+export const AttachmentOutSchema = z.object({
+  id: z.string(),
+  filename: z.string(),
+  media_type: z.string(),
+  size_bytes: z.number(),
+});
+export type AttachmentOut = z.infer<typeof AttachmentOutSchema>;
+
 export const MessageOutSchema = z.object({
   id: z.string(),
   role: z.string(),
   content: z.string(),
   created_at: z.string(),
   citations: z.array(CitationOutSchema).default([]),
+  attachments: z.array(AttachmentOutSchema).default([]),
 });
 export type MessageOut = z.infer<typeof MessageOutSchema>;
 
@@ -51,14 +68,6 @@ export const ConversationDetailSchema = z.object({
   messages: z.array(MessageOutSchema),
 });
 export type ConversationDetail = z.infer<typeof ConversationDetailSchema>;
-
-export const AttachmentOutSchema = z.object({
-  id: z.string(),
-  filename: z.string(),
-  media_type: z.string(),
-  size_bytes: z.number(),
-});
-export type AttachmentOut = z.infer<typeof AttachmentOutSchema>;
 
 // ── Request bodies ───────────────────────────────────────────────────────────
 
