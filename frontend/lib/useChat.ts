@@ -2,7 +2,9 @@
 
 import { useState, useRef, useCallback } from "react";
 import { sendMessage, getConversation } from "@/lib/api";
-import type { MessageOut, CitationOut } from "@/types/api";
+import type { MessageOut, CitationOut, AttachmentOut } from "@/types/api";
+
+export type SearchStatus = "idle" | "searching" | "read";
 
 export interface DisplayMessage {
   id: string;
@@ -11,6 +13,9 @@ export interface DisplayMessage {
   isStreaming: boolean;
   error: string | null;
   citations: CitationOut[];
+  attachments: AttachmentOut[];
+  searchStatus: SearchStatus;
+  searchResultCount?: number;
 }
 
 function toDisplay(m: MessageOut): DisplayMessage {
@@ -21,6 +26,8 @@ function toDisplay(m: MessageOut): DisplayMessage {
     isStreaming: false,
     error: null,
     citations: m.citations,
+    attachments: m.attachments,
+    searchStatus: "idle",
   };
 }
 
@@ -32,16 +39,18 @@ export function useChat(conversationId: string, initialMessages: MessageOut[]) {
   const abortRef = useRef<AbortController | null>(null);
   const isFirstRef = useRef(initialMessages.length === 0);
   const lastUserContentRef = useRef("");
+  const lastAttachmentIdsRef = useRef<string[]>([]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
   }, []);
 
   const send = useCallback(
-    async (content: string): Promise<string | null> => {
+    async (content: string, attachmentIds: string[] = []): Promise<string | null> => {
       if (isStreaming || !content.trim()) return null;
 
       lastUserContentRef.current = content;
+      lastAttachmentIdsRef.current = attachmentIds;
       const tempUserId = `optimistic-user-${Date.now()}`;
       const tempAssistantId = `optimistic-assistant-${Date.now() + 1}`;
 
@@ -54,6 +63,8 @@ export function useChat(conversationId: string, initialMessages: MessageOut[]) {
           isStreaming: false,
           error: null,
           citations: [],
+          attachments: [],
+          searchStatus: "idle",
         },
         {
           id: tempAssistantId,
@@ -62,6 +73,8 @@ export function useChat(conversationId: string, initialMessages: MessageOut[]) {
           isStreaming: true,
           error: null,
           citations: [],
+          attachments: [],
+          searchStatus: "idle",
         },
       ]);
 
@@ -75,7 +88,7 @@ export function useChat(conversationId: string, initialMessages: MessageOut[]) {
         const stream = sendMessage(
           conversationId,
           content,
-          [],
+          attachmentIds,
           controller.signal
         );
         let serverAssistantId: string | null = null;
@@ -89,6 +102,48 @@ export function useChat(conversationId: string, initialMessages: MessageOut[]) {
               prev.map((m) =>
                 m.id === tempAssistantId
                   ? { ...m, content: m.content + text }
+                  : m
+              )
+            );
+          } else if (event.type === "tool_use") {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === tempAssistantId
+                  ? { ...m, searchStatus: "searching" }
+                  : m
+              )
+            );
+          } else if (event.type === "tool_result") {
+            const count =
+              typeof event.data.result_count === "number"
+                ? event.data.result_count
+                : 0;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === tempAssistantId
+                  ? { ...m, searchStatus: "read", searchResultCount: count }
+                  : m
+              )
+            );
+          } else if (event.type === "citation") {
+            const c = event.data as CitationOut & { id?: string };
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === tempAssistantId
+                  ? {
+                      ...m,
+                      citations: [
+                        ...m.citations,
+                        {
+                          id: c.id ?? `cite-${m.citations.length}`,
+                          url: c.url,
+                          title: c.title ?? null,
+                          cited_text: c.cited_text ?? null,
+                          start_index: c.start_index ?? null,
+                          end_index: c.end_index ?? null,
+                        },
+                      ],
+                    }
                   : m
               )
             );
@@ -149,12 +204,12 @@ export function useChat(conversationId: string, initialMessages: MessageOut[]) {
     [conversationId, isStreaming]
   );
 
-  // Retry the last failed message: remove the error bubble + user message, resend
   const retry = useCallback(async (): Promise<string | null> => {
     const content = lastUserContentRef.current;
+    const attachmentIds = lastAttachmentIdsRef.current;
     if (!content || isStreaming) return null;
     setMessages((prev) => prev.slice(0, -2));
-    return send(content);
+    return send(content, attachmentIds);
   }, [isStreaming, send]);
 
   return { messages, isStreaming, send, stop, retry };

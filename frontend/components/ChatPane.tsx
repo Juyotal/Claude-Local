@@ -1,15 +1,15 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Globe } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import ModelPicker from "@/components/ModelPicker";
 import SystemPromptEditor from "@/components/SystemPromptEditor";
 import MessageList from "@/components/MessageList";
-import Composer from "@/components/Composer";
-import { updateConversation } from "@/lib/api";
+import Composer, { type ComposerHandle } from "@/components/Composer";
+import { updateConversation, getConfig, getHealth } from "@/lib/api";
 import { useChat } from "@/lib/useChat";
-import type { ConversationDetail } from "@/types/api";
+import type { ConversationDetail, Config } from "@/types/api";
 
 interface Props {
   conversation: ConversationDetail;
@@ -17,10 +17,23 @@ interface Props {
 
 export default function ChatPane({ conversation: initial }: Props) {
   const [conv, setConv] = useState(initial);
+  const [config, setConfig] = useState<Config | null>(null);
+  const [apiKeyMissing, setApiKeyMissing] = useState(false);
+  const composerRef = useRef<ComposerHandle>(null);
+
   const { messages, isStreaming, send, stop, retry } = useChat(
     conv.id,
     initial.messages
   );
+
+  useEffect(() => {
+    void getConfig()
+      .then(setConfig)
+      .catch(() => null);
+    void getHealth()
+      .then((h) => setApiKeyMissing(!h.anthropic_key_present))
+      .catch(() => null);
+  }, []);
 
   function handleModelChange(model: string) {
     setConv((c) => ({ ...c, model }));
@@ -41,19 +54,51 @@ export default function ChatPane({ conversation: initial }: Props) {
   }
 
   const handleSend = useCallback(
-    async (content: string) => {
-      const newTitle = await send(content);
+    async (content: string, attachmentIds: string[]) => {
+      const newTitle = await send(content, attachmentIds);
       if (newTitle) {
         setConv((c) => ({ ...c, title: newTitle }));
-        // Signal Sidebar to refresh its conversation list
         window.dispatchEvent(new CustomEvent("conversation-updated"));
       }
     },
     [send]
   );
 
+  // Forward drag events from the full chat pane to the Composer
+  function handlePaneDragOver(e: React.DragEvent) {
+    if (e.dataTransfer.types.includes("Files")) {
+      e.preventDefault();
+    }
+  }
+
+  function handlePaneDrop(e: React.DragEvent) {
+    if (e.dataTransfer.files.length) {
+      e.preventDefault();
+      composerRef.current?.addFiles(e.dataTransfer.files);
+    }
+  }
+
   return (
-    <div className="flex flex-col flex-1 min-h-0 bg-background">
+    <div
+      className="flex flex-col flex-1 min-h-0 bg-background"
+      onDragOver={handlePaneDragOver}
+      onDrop={handlePaneDrop}
+    >
+      {/* API key missing banner */}
+      {apiKeyMissing && (
+        <div className="bg-amber-50 dark:bg-amber-950 border-b border-amber-300 dark:border-amber-700 px-4 py-2 text-sm text-amber-800 dark:text-amber-200 text-center">
+          <strong>API key not set.</strong> Add{" "}
+          <code className="font-mono text-xs bg-amber-100 dark:bg-amber-900 px-1 rounded">
+            ANTHROPIC_API_KEY
+          </code>{" "}
+          to{" "}
+          <code className="font-mono text-xs bg-amber-100 dark:bg-amber-900 px-1 rounded">
+            backend/.env
+          </code>{" "}
+          and restart the server.
+        </div>
+      )}
+
       {/* Header */}
       <header className="flex items-center gap-2 px-4 py-2.5 border-b border-border shrink-0">
         <div className="flex-1 min-w-0">
@@ -92,7 +137,14 @@ export default function ChatPane({ conversation: initial }: Props) {
       />
 
       {/* Composer */}
-      <Composer isStreaming={isStreaming} onSend={handleSend} onStop={stop} />
+      <Composer
+        ref={composerRef}
+        isStreaming={isStreaming}
+        onSend={handleSend}
+        onStop={stop}
+        maxUploadBytes={config?.max_upload_bytes}
+        supportedMediaTypes={config?.supported_media_types}
+      />
     </div>
   );
 }
