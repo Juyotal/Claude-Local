@@ -1,21 +1,145 @@
 "use client";
 
 import { useRef, useEffect, useState, useCallback } from "react";
-import { AlertCircle, ArrowDown, RefreshCw } from "lucide-react";
+import { AlertCircle, ArrowDown, RefreshCw, FileText, Search, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn, formatBytes } from "@/lib/utils";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
+import { attachmentUrl } from "@/lib/api";
 import type { DisplayMessage } from "@/lib/useChat";
+import type { AttachmentOut, CitationOut } from "@/types/api";
 
 const NEAR_BOTTOM_THRESHOLD = 120;
 
 interface Props {
   messages: DisplayMessage[];
-  isStreaming: boolean;
   onRetry?: () => void;
 }
 
-export default function MessageList({ messages, isStreaming, onRetry }: Props) {
+function AttachmentPills({ attachments }: { attachments: AttachmentOut[] }) {
+  if (!attachments.length) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5 mb-2" role="list" aria-label="Attachments">
+      {attachments.map((a) => {
+        const isImage = a.media_type.startsWith("image/");
+        const url = attachmentUrl(a.id);
+        return (
+          <a
+            key={a.id}
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            role="listitem"
+            title={`${a.filename} (${formatBytes(a.size_bytes)})`}
+            className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-2 py-1 text-xs text-primary-foreground/80 hover:bg-primary/20 transition-colors max-w-[180px]"
+          >
+            {isImage ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={url}
+                alt={a.filename}
+                className="h-6 w-6 rounded object-cover shrink-0"
+              />
+            ) : (
+              <FileText className="h-3.5 w-3.5 shrink-0" />
+            )}
+            <span className="truncate">{a.filename}</span>
+            <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
+          </a>
+        );
+      })}
+    </div>
+  );
+}
+
+function SearchIndicator({
+  status,
+  count,
+}: {
+  status: DisplayMessage["searchStatus"];
+  count?: number;
+}) {
+  if (status === "idle") return null;
+  return (
+    <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
+      <Search
+        className={cn(
+          "h-3.5 w-3.5",
+          status === "searching" && "animate-pulse text-primary"
+        )}
+      />
+      {status === "searching" ? (
+        <span className="animate-pulse">Searching the web…</span>
+      ) : (
+        <span>Read {count ?? 0} result{count !== 1 ? "s" : ""}</span>
+      )}
+    </div>
+  );
+}
+
+// Injects [^n] footnote markers into content at citation character positions
+// so MarkdownRenderer can render them as superscripts via GFM footnotes.
+function injectCitationMarkers(content: string, citations: CitationOut[]): string {
+  const positioned = citations
+    .map((c, i) => ({ c, i }))
+    .filter(({ c }) => c.start_index != null && c.end_index != null)
+    .sort((a, b) => (b.c.end_index ?? 0) - (a.c.end_index ?? 0)); // reverse order to preserve indices
+
+  let result = content;
+  for (const { i, c } of positioned) {
+    result =
+      result.slice(0, c.end_index!) + `[^${i + 1}]` + result.slice(c.end_index!);
+  }
+  return result;
+}
+
+function SourcesSection({ citations }: { citations: CitationOut[] }) {
+  if (!citations.length) return null;
+
+  return (
+    <div className="mt-3 pt-3 border-t border-border">
+      <p className="text-xs font-medium text-muted-foreground mb-1.5">Sources</p>
+      <ol className="space-y-1">
+        {citations.map((c, i) => {
+          let domain = "";
+          try {
+            domain = new URL(c.url).hostname.replace(/^www\./, "");
+          } catch {
+            domain = c.url;
+          }
+          return (
+            <li key={c.id ?? i} className="flex items-start gap-1.5 text-xs">
+              <span className="text-muted-foreground shrink-0 w-4 text-right">
+                {i + 1}.
+              </span>
+              <a
+                href={c.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={c.cited_text ?? c.title ?? c.url}
+                className="flex items-center gap-1.5 text-primary hover:underline min-w-0 group"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={`https://www.google.com/s2/favicons?sz=16&domain=${domain}`}
+                  alt=""
+                  className="h-3.5 w-3.5 shrink-0 rounded-sm opacity-80"
+                  aria-hidden="true"
+                />
+                <span className="truncate">{c.title ?? domain}</span>
+                <span className="text-muted-foreground shrink-0 hidden group-hover:inline">
+                  ({domain})
+                </span>
+              </a>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
+export default function MessageList({ messages, onRetry }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const wasNearBottomRef = useRef(true);
@@ -33,7 +157,6 @@ export default function MessageList({ messages, isStreaming, onRetry }: Props) {
     });
   }
 
-  // Auto-scroll to bottom when messages change, only if user was near bottom
   useEffect(() => {
     if (wasNearBottomRef.current) {
       scrollToBottom("instant");
@@ -76,8 +199,9 @@ export default function MessageList({ messages, isStreaming, onRetry }: Props) {
             </span>
 
             {msg.role === "user" ? (
-              <div className="rounded-xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap bg-primary text-primary-foreground">
-                {msg.content}
+              <div className="rounded-xl px-4 py-3 text-sm leading-relaxed bg-primary text-primary-foreground">
+                <AttachmentPills attachments={msg.attachments} />
+                <span className="whitespace-pre-wrap">{msg.content}</span>
               </div>
             ) : (
               <div className="rounded-xl px-4 py-3 text-sm bg-muted text-foreground min-w-0 w-full">
@@ -99,38 +223,33 @@ export default function MessageList({ messages, isStreaming, onRetry }: Props) {
                       </Button>
                     )}
                   </div>
-                ) : msg.content ? (
-                  <div className="relative">
-                    <MarkdownRenderer content={msg.content} />
-                    {msg.isStreaming && (
+                ) : (
+                  <>
+                    <SearchIndicator
+                      status={msg.searchStatus}
+                      count={msg.searchResultCount}
+                    />
+                    {msg.content ? (
+                      <div className="relative">
+                        <MarkdownRenderer
+                          content={injectCitationMarkers(msg.content, msg.citations)}
+                        />
+                        {msg.isStreaming && (
+                          <span
+                            className="inline-block w-1.5 h-4 bg-foreground/60 ml-0.5 align-text-bottom animate-pulse"
+                            aria-hidden="true"
+                          />
+                        )}
+                      </div>
+                    ) : msg.isStreaming ? (
                       <span
-                        className="inline-block w-1.5 h-4 bg-foreground/60 ml-0.5 align-text-bottom animate-pulse"
+                        className="inline-block w-1.5 h-4 bg-foreground/60 animate-pulse"
                         aria-hidden="true"
                       />
-                    )}
-                  </div>
-                ) : msg.isStreaming ? (
-                  <span
-                    className="inline-block w-1.5 h-4 bg-foreground/60 animate-pulse"
-                    aria-hidden="true"
-                  />
-                ) : null}
-              </div>
-            )}
-
-            {msg.citations.length > 0 && (
-              <div className="text-xs text-muted-foreground space-y-1 px-1">
-                {msg.citations.map((c) => (
-                  <a
-                    key={c.id}
-                    href={c.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1 hover:text-foreground transition-colors"
-                  >
-                    <span className="truncate max-w-xs">{c.title ?? c.url}</span>
-                  </a>
-                ))}
+                    ) : null}
+                    <SourcesSection citations={msg.citations} />
+                  </>
+                )}
               </div>
             )}
           </div>

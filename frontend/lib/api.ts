@@ -6,6 +6,7 @@ import {
   ConfigSchema,
   ConversationDetailSchema,
   ConversationOutSchema,
+  HealthResponseSchema,
   ModelInfoSchema,
   type AttachmentOut,
   type Config,
@@ -13,6 +14,7 @@ import {
   type ConversationDetail,
   type ConversationOut,
   type ConversationUpdate,
+  type HealthResponse,
   type ModelInfo,
 } from "@/types/api";
 
@@ -132,19 +134,8 @@ export async function deleteUpload(attachmentId: string): Promise<void> {
 
 // ── Health ────────────────────────────────────────────────────────────────────
 
-export async function getHealth(): Promise<{
-  status: string;
-  db: string;
-  anthropic_key_present: boolean;
-}> {
-  return apiFetch(
-    "/health",
-    z.object({
-      status: z.string(),
-      db: z.string(),
-      anthropic_key_present: z.boolean(),
-    })
-  );
+export async function getHealth(): Promise<HealthResponse> {
+  return apiFetch("/health", HealthResponseSchema);
 }
 
 // ── Attachments ───────────────────────────────────────────────────────────────

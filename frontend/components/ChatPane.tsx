@@ -132,7 +132,6 @@ export default function ChatPane({ conversation: initial }: Props) {
       {/* Messages */}
       <MessageList
         messages={messages}
-        isStreaming={isStreaming}
         onRetry={() => void retry()}
       />
 

@@ -13,10 +13,7 @@ export interface PendingAttachment {
   attachment?: AttachmentOut;
 }
 
-export function useAttachments(
-  maxBytes: number,
-  supportedTypes: string[]
-) {
+export function useAttachments(maxBytes: number, supportedTypes: string[]) {
   const [pending, setPending] = useState<PendingAttachment[]>([]);
 
   const validate = useCallback(
@@ -25,80 +22,82 @@ export function useAttachments(
         const mb = (maxBytes / 1024 / 1024).toFixed(0);
         return `File exceeds ${mb} MB limit`;
       }
-      // Accept if media type matches or if text/* fallback
       const mt = file.type || "application/octet-stream";
       const ok =
         supportedTypes.includes(mt) ||
         mt.startsWith("text/") ||
-        supportedTypes.some((t) => t.startsWith("text/") && mt === "application/octet-stream");
+        (mt === "application/octet-stream" &&
+          supportedTypes.some((t) => t.startsWith("text/")));
       if (!ok) return `Unsupported file type: ${mt}`;
       return null;
     },
     [maxBytes, supportedTypes]
   );
 
-  const addFiles = useCallback(
-    async (files: FileList | File[]) => {
-      const arr = Array.from(files);
-      for (const file of arr) {
-        const validationError = validate(file);
-        const uid = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const uploadOne = useCallback(
+    async (uid: string, file: File) => {
+      const progressTimer = setInterval(() => {
+        setPending((prev) =>
+          prev.map((p) =>
+            p.uid === uid && p.status === "uploading" && p.progress < 80
+              ? { ...p, progress: p.progress + 20 }
+              : p
+          )
+        );
+      }, 150);
 
-        if (validationError) {
-          setPending((prev) => [
-            ...prev,
-            { uid, file, status: "error", progress: 0, errorMsg: validationError },
-          ]);
-          continue;
-        }
-
-        setPending((prev) => [
-          ...prev,
-          { uid, file, status: "uploading", progress: 0 },
-        ]);
-
-        try {
-          // Simulate incremental progress since fetch doesn't expose it
-          const progressTimer = setInterval(() => {
-            setPending((prev) =>
-              prev.map((p) =>
-                p.uid === uid && p.status === "uploading" && p.progress < 80
-                  ? { ...p, progress: p.progress + 20 }
-                  : p
-              )
-            );
-          }, 150);
-
-          const attachment = await uploadFile(file);
-          clearInterval(progressTimer);
-
-          setPending((prev) =>
-            prev.map((p) =>
-              p.uid === uid
-                ? { ...p, status: "done", progress: 100, attachment }
-                : p
-            )
-          );
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : "Upload failed";
-          setPending((prev) =>
-            prev.map((p) =>
-              p.uid === uid
-                ? { ...p, status: "error", progress: 0, errorMsg: msg }
-                : p
-            )
-          );
-        }
+      try {
+        const attachment = await uploadFile(file);
+        setPending((prev) =>
+          prev.map((p) =>
+            p.uid === uid ? { ...p, status: "done", progress: 100, attachment } : p
+          )
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Upload failed";
+        setPending((prev) =>
+          prev.map((p) =>
+            p.uid === uid ? { ...p, status: "error", progress: 0, errorMsg: msg } : p
+          )
+        );
+      } finally {
+        clearInterval(progressTimer);
       }
     },
-    [validate]
+    []
   );
 
-  const remove = useCallback(async (uid: string) => {
+  const addFiles = useCallback(
+    (files: FileList | File[]) => {
+      const arr = Array.from(files);
+      const toUpload: { uid: string; file: File }[] = [];
+
+      const newItems: PendingAttachment[] = arr.map((file) => {
+        const uid = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const validationError = validate(file);
+        if (validationError) {
+          return { uid, file, status: "error" as const, progress: 0, errorMsg: validationError };
+        }
+        toUpload.push({ uid, file });
+        return { uid, file, status: "uploading" as const, progress: 0 };
+      });
+
+      setPending((prev) => [...prev, ...newItems]);
+
+      // Kick off all valid uploads concurrently
+      for (const { uid, file } of toUpload) {
+        void uploadOne(uid, file);
+      }
+    },
+    [validate, uploadOne]
+  );
+
+  const remove = useCallback((uid: string) => {
     setPending((prev) => {
       const target = prev.find((p) => p.uid === uid);
+      // Hoist the side-effect out of the updater to avoid double-fire in Strict Mode
       if (target?.attachment) {
-        void deleteUpload(target.attachment.id);
+        setTimeout(() => void deleteUpload(target.attachment!.id), 0);
       }
       return prev.filter((p) => p.uid !== uid);
     });

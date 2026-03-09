@@ -8,6 +8,15 @@ export const ModelInfoSchema = z.object({
 });
 export type ModelInfo = z.infer<typeof ModelInfoSchema>;
 
+// ── Health ───────────────────────────────────────────────────────────────────
+
+export const HealthResponseSchema = z.object({
+  status: z.string(),
+  db: z.string(),
+  anthropic_key_present: z.boolean(),
+});
+export type HealthResponse = z.infer<typeof HealthResponseSchema>;
+
 // ── Config ───────────────────────────────────────────────────────────────────
 
 export const ConfigSchema = z.object({

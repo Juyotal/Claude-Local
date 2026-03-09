@@ -11,19 +11,26 @@ import {
 import { Send, Paperclip, Square, X, FileText, AlertCircle } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn, formatBytes } from "@/lib/utils";
 import { attachmentUrl } from "@/lib/api";
 import { useAttachments, type PendingAttachment } from "@/lib/useAttachments";
 
 const MAX_LINES = 8;
 const LINE_HEIGHT_PX = 24;
 
-// Fallback limits used before config loads
-const DEFAULT_MAX_BYTES = 26214400; // 25 MB
+// Fallback limits used before /api/config loads — kept in sync with backend defaults.
+const DEFAULT_MAX_BYTES = 26214400; // 25 MB — matches settings.MAX_UPLOAD_BYTES
 const DEFAULT_SUPPORTED_TYPES = [
   "image/png", "image/jpeg", "image/gif", "image/webp",
   "application/pdf",
-  "text/plain", "text/markdown", "text/csv", "application/json",
+  "text/plain", "text/markdown", "text/csv", "text/html", "text/css",
+  "text/xml", "text/yaml", "text/javascript", "text/typescript",
+  "text/x-python", "text/x-c", "text/x-c++", "text/x-java", "text/x-rust",
+  "text/x-go", "text/x-ruby", "text/x-php", "text/x-swift", "text/x-kotlin",
+  "text/x-scala", "text/x-shellscript", "text/x-sh", "text/x-sql",
+  "application/json", "application/xml", "application/javascript",
+  "application/typescript", "application/x-yaml", "application/x-sh",
+  "application/toml",
 ];
 
 export interface ComposerHandle {
@@ -38,12 +45,6 @@ interface Props {
   supportedMediaTypes?: string[];
 }
 
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
-}
-
 function AttachmentPill({
   item,
   onRemove,
@@ -51,9 +52,9 @@ function AttachmentPill({
   item: PendingAttachment;
   onRemove: () => void;
 }) {
-  const isImage =
-    item.attachment?.media_type.startsWith("image/") ??
-    item.file.type.startsWith("image/");
+  const isImage = (
+    item.attachment?.media_type ?? item.file.type
+  ).startsWith("image/");
 
   return (
     <div
@@ -64,7 +65,6 @@ function AttachmentPill({
           : "border-border bg-muted text-foreground"
       )}
     >
-      {/* Thumbnail or icon */}
       {item.status === "done" && item.attachment && isImage ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -125,7 +125,6 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(
 
   useImperativeHandle(ref, () => ({ addFiles }), [addFiles]);
 
-  // Auto-grow textarea up to MAX_LINES, then scroll
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
@@ -152,8 +151,7 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     if (e.target.files?.length) {
-      void addFiles(e.target.files);
-      // Reset so the same file can be re-selected after removal
+      addFiles(e.target.files);
       e.target.value = "";
     }
   }
@@ -173,7 +171,7 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     e.preventDefault();
     setIsDragging(false);
     if (e.dataTransfer.files.length) {
-      void addFiles(e.dataTransfer.files);
+      addFiles(e.dataTransfer.files);
     }
   }
 
@@ -191,18 +189,16 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(
       onDrop={handleDrop}
     >
       <div className="max-w-3xl mx-auto flex flex-col gap-2">
-        {/* Attachment pills */}
         {hasPending && (
           <div className="flex flex-wrap gap-1.5" role="list" aria-label="Pending attachments">
             {pending.map((item) => (
               <div key={item.uid} role="listitem">
-                <AttachmentPill item={item} onRemove={() => void remove(item.uid)} />
+                <AttachmentPill item={item} onRemove={() => remove(item.uid)} />
               </div>
             ))}
           </div>
         )}
 
-        {/* Drag-and-drop hint */}
         {isDragging && (
           <div className="text-xs text-primary text-center py-1 font-medium">
             Drop files to attach
@@ -223,7 +219,6 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             />
           </div>
 
-          {/* Hidden file input */}
           <input
             ref={fileInputRef}
             type="file"
