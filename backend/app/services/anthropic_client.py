@@ -31,7 +31,7 @@ async def stream_chat(
     messages: list[ChatMessage],
     model: str,
     system: str | None = None,
-    max_tokens: int = 4096,
+    max_tokens: int = 8192,
     tools: list[dict[str, Any]] | None = None,
 ) -> AsyncGenerator[dict, None]:
     """Stream a chat completion, optionally with server-side tools (e.g. web search).

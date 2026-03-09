@@ -28,7 +28,7 @@ export default async function ConversationPage({ params }: Props) {
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar />
-      <ChatPane conversation={conversation} />
+      <ChatPane key={conversation.id} conversation={conversation} />
     </div>
   );
 }

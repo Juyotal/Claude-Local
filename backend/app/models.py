@@ -54,6 +54,9 @@ class Message(Base):
 
     __table_args__ = (Index("ix_messages_conversation_id", "conversation_id"),)
 
+    def to_dict(self):
+        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+
 
 class Attachment(Base):
     __tablename__ = "attachments"

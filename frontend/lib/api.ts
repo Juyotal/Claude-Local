@@ -47,7 +47,7 @@ export async function listConversations(): Promise<ConversationOut[]> {
 }
 
 export async function getConversation(id: string): Promise<ConversationDetail> {
-  return apiFetch(`/api/conversations/${id}`, ConversationDetailSchema);
+  return apiFetch(`/api/conversations/${id}`, ConversationDetailSchema, { cache: "no-store" });
 }
 
 export async function createConversation(

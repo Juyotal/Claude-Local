@@ -167,13 +167,18 @@ export default function Sidebar() {
                   >
                     <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm truncate leading-tight">{conv.title}</p>
+                      <p
+                        className="text-sm leading-tight"
+                        title={conv.title.length > 25 ? conv.title : undefined}
+                      >
+                        {conv.title.length > 25 ? conv.title.slice(0, 25) + "…" : conv.title}
+                      </p>
                       <p className="text-xs text-muted-foreground">{relativeTime(conv.updated_at)}</p>
                     </div>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <button
-                          className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-muted transition-opacity"
+                          className="shrink-0 opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-muted transition-opacity"
                           onClick={(e) => e.stopPropagation()}
                           aria-label="Conversation options"
                         >
