@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { Plus, MessageSquare, MoreHorizontal, Pencil, Trash2, Sun, Moon } from "lucide-react";
+import {
+  Plus, MessageSquare, MoreHorizontal, Pencil, Trash2, Sun, Moon, Search,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -12,6 +14,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useTheme } from "@/components/ThemeProvider";
 import {
   listConversations,
@@ -44,11 +54,17 @@ export default function Sidebar() {
   const [loading, setLoading] = useState(true);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<ConversationOut | null>(null);
+
+  // Used for optimistic rollback
+  const prevConversationsRef = useRef<ConversationOut[]>([]);
 
   const reload = useCallback(async () => {
     try {
       const data = await listConversations();
       setConversations(data);
+      prevConversationsRef.current = data;
     } catch {
       // silently fail — backend may not be running yet
     } finally {
@@ -60,7 +76,6 @@ export default function Sidebar() {
     void reload();
   }, [reload]);
 
-  // Refresh when ChatPane signals a title change (e.g. auto-title after first message)
   useEffect(() => {
     function onConversationUpdated() {
       void reload();
@@ -80,13 +95,19 @@ export default function Sidebar() {
     }
   }
 
-  async function handleDelete(id: string) {
+  async function handleDelete(conv: ConversationOut) {
+    // Optimistic remove
+    const snapshot = conversations;
+    setConversations((prev) => prev.filter((c) => c.id !== conv.id));
+
     try {
-      await deleteConversation(id);
-      if (activeId === id) router.push("/");
-      await reload();
+      await deleteConversation(conv.id);
+      if (activeId === conv.id) router.push("/");
     } catch (err) {
       console.error("Failed to delete conversation", err);
+      setConversations(snapshot); // rollback
+    } finally {
+      setDeleteTarget(null);
     }
   }
 
@@ -97,115 +118,180 @@ export default function Sidebar() {
 
   async function commitRename(id: string) {
     const trimmed = renameValue.trim();
-    if (trimmed) {
-      try {
-        await updateConversation(id, { title: trimmed });
-        await reload();
-      } catch (err) {
-        console.error("Failed to rename conversation", err);
-      }
-    }
     setRenamingId(null);
+    if (!trimmed) return;
+
+    // Optimistic update
+    const snapshot = conversations;
+    setConversations((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, title: trimmed } : c))
+    );
+
+    try {
+      await updateConversation(id, { title: trimmed });
+    } catch (err) {
+      console.error("Failed to rename conversation", err);
+      setConversations(snapshot); // rollback
+    }
   }
 
+  const filtered = searchQuery.trim()
+    ? conversations.filter((c) =>
+        c.title.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : conversations;
+
   return (
-    <aside className="flex flex-col w-[260px] shrink-0 border-r border-border bg-card h-screen">
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-3 border-b border-border">
-        <span className="font-semibold text-sm tracking-tight">Claude Local</span>
-        <button
-          onClick={toggle}
-          className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-          aria-label="Toggle theme"
-        >
-          {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-        </button>
-      </div>
+    <>
+      <aside className="flex flex-col w-[260px] shrink-0 border-r border-border bg-card h-screen">
+        {/* Header */}
+        <div className="flex items-center justify-between px-3 py-3 border-b border-border">
+          <span className="font-semibold text-sm tracking-tight">Claude Local</span>
+          <button
+            onClick={toggle}
+            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            aria-label="Toggle theme"
+          >
+            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </button>
+        </div>
 
-      {/* New conversation */}
-      <div className="px-2 pt-2 pb-1">
-        <Button
-          variant="ghost"
-          className="w-full justify-start gap-2 text-sm h-9"
-          onClick={handleNew}
-        >
-          <Plus className="h-4 w-4" />
-          New conversation
-        </Button>
-      </div>
+        {/* New conversation */}
+        <div className="px-2 pt-2 pb-1">
+          <Button
+            variant="ghost"
+            className="w-full justify-start gap-2 text-sm h-9"
+            onClick={handleNew}
+          >
+            <Plus className="h-4 w-4" />
+            New conversation
+          </Button>
+        </div>
 
-      {/* Conversation list */}
-      <ScrollArea className="flex-1 px-2 py-1">
-        {loading ? (
-          <div className="px-3 py-4 text-xs text-muted-foreground">Loading…</div>
-        ) : conversations.length === 0 ? (
-          <div className="px-3 py-4 text-xs text-muted-foreground">No conversations yet.</div>
-        ) : (
-          <ul className="space-y-0.5">
-            {conversations.map((conv) => (
-              <li key={conv.id}>
-                {renamingId === conv.id ? (
-                  <Input
-                    autoFocus
-                    value={renameValue}
-                    onChange={(e) => setRenameValue(e.target.value)}
-                    onBlur={() => commitRename(conv.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") void commitRename(conv.id);
-                      if (e.key === "Escape") setRenamingId(null);
-                    }}
-                    className="h-8 text-sm my-0.5"
-                  />
-                ) : (
-                  <div
-                    className={`group flex items-center gap-1 rounded-md px-2 py-2 cursor-pointer transition-colors ${
-                      activeId === conv.id
-                        ? "bg-accent text-accent-foreground"
-                        : "hover:bg-accent/60 text-foreground"
-                    }`}
-                    onClick={() => router.push(`/c/${conv.id}`)}
-                  >
-                    <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <div className="flex-1 min-w-0">
-                      <p
-                        className="text-sm leading-tight"
-                        title={conv.title.length > 25 ? conv.title : undefined}
-                      >
-                        {conv.title.length > 25 ? conv.title.slice(0, 25) + "…" : conv.title}
-                      </p>
-                      <p className="text-xs text-muted-foreground">{relativeTime(conv.updated_at)}</p>
+        {/* Search */}
+        <div className="px-2 pb-1">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search conversations…"
+              className="h-8 pl-8 text-xs"
+              aria-label="Search conversations"
+            />
+          </div>
+        </div>
+
+        {/* Conversation list */}
+        <ScrollArea className="flex-1 px-2 py-1">
+          {loading ? (
+            <div className="px-3 py-4 text-xs text-muted-foreground">Loading…</div>
+          ) : conversations.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 px-3 py-8 text-center">
+              <MessageSquare className="h-8 w-8 text-muted-foreground/40" />
+              <p className="text-xs text-muted-foreground">No conversations yet.</p>
+              <p className="text-xs text-muted-foreground">
+                Click <strong>New conversation</strong> to get started.
+              </p>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="px-3 py-4 text-xs text-muted-foreground">
+              No conversations match &ldquo;{searchQuery}&rdquo;.
+            </div>
+          ) : (
+            <ul className="space-y-0.5">
+              {filtered.map((conv) => (
+                <li key={conv.id}>
+                  {renamingId === conv.id ? (
+                    <Input
+                      autoFocus
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onBlur={() => void commitRename(conv.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void commitRename(conv.id);
+                        if (e.key === "Escape") setRenamingId(null);
+                      }}
+                      className="h-8 text-sm my-0.5"
+                    />
+                  ) : (
+                    <div
+                      className={`group flex items-center gap-1 rounded-md px-2 py-2 cursor-pointer transition-colors ${
+                        activeId === conv.id
+                          ? "bg-accent text-accent-foreground"
+                          : "hover:bg-accent/60 text-foreground"
+                      }`}
+                      onClick={() => router.push(`/c/${conv.id}`)}
+                    >
+                      <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <div className="flex-1 min-w-0">
+                        <p
+                          className="text-sm leading-tight truncate"
+                          title={conv.title.length > 25 ? conv.title : undefined}
+                        >
+                          {conv.title.length > 25 ? conv.title.slice(0, 25) + "…" : conv.title}
+                        </p>
+                        <p className="text-xs text-muted-foreground">{relativeTime(conv.updated_at)}</p>
+                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            className="shrink-0 opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-muted transition-opacity"
+                            onClick={(e) => e.stopPropagation()}
+                            aria-label="Conversation options"
+                          >
+                            <MoreHorizontal className="h-3.5 w-3.5" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => startRename(conv)}>
+                            <Pencil className="h-3.5 w-3.5" />
+                            Rename
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-red-500 focus:text-red-500"
+                            onClick={() => setDeleteTarget(conv)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          className="shrink-0 opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-muted transition-opacity"
-                          onClick={(e) => e.stopPropagation()}
-                          aria-label="Conversation options"
-                        >
-                          <MoreHorizontal className="h-3.5 w-3.5" />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => startRename(conv)}>
-                          <Pencil className="h-3.5 w-3.5" />
-                          Rename
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="text-red-500 focus:text-red-500"
-                          onClick={() => handleDelete(conv.id)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </ScrollArea>
-    </aside>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </ScrollArea>
+      </aside>
+
+      {/* Delete confirmation dialog */}
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete conversation</DialogTitle>
+            <DialogDescription>
+              &ldquo;{deleteTarget?.title}&rdquo; will be permanently deleted. This
+              cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteTarget && void handleDelete(deleteTarget)}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
