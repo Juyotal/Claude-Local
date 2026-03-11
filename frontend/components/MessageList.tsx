@@ -11,9 +11,41 @@ import type { AttachmentOut, CitationOut } from "@/types/api";
 
 const NEAR_BOTTOM_THRESHOLD = 120;
 
+const SUGGESTIONS = [
+  "Summarize a PDF for me",
+  "Debug some code I'm working on",
+  "Search the web for the latest AI news",
+  "Explain a concept in simple terms",
+];
+
 interface Props {
   messages: DisplayMessage[];
   onRetry?: () => void;
+  onSuggest?: (text: string) => void;
+}
+
+function EmptyChat({ onSuggest }: { onSuggest?: (text: string) => void }) {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-6 px-6 text-center">
+      <div>
+        <h2 className="text-lg font-semibold mb-1">How can I help you today?</h2>
+        <p className="text-sm text-muted-foreground">
+          Ask me anything, share a file, or try one of these:
+        </p>
+      </div>
+      <div className="grid grid-cols-2 gap-2 w-full max-w-md">
+        {SUGGESTIONS.map((s) => (
+          <button
+            key={s}
+            onClick={() => onSuggest?.(s)}
+            className="rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-left hover:bg-accent transition-colors"
+          >
+            {s}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function AttachmentPills({ attachments }: { attachments: AttachmentOut[] }) {
@@ -139,7 +171,7 @@ function SourcesSection({ citations }: { citations: CitationOut[] }) {
   );
 }
 
-export default function MessageList({ messages, onRetry }: Props) {
+export default function MessageList({ messages, onRetry, onSuggest }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const wasNearBottomRef = useRef(true);
@@ -170,11 +202,7 @@ export default function MessageList({ messages, onRetry }: Props) {
   }
 
   if (messages.length === 0) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
-        No messages yet. Start a conversation below.
-      </div>
-    );
+    return <EmptyChat onSuggest={onSuggest} />;
   }
 
   return (

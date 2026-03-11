@@ -133,6 +133,7 @@ export default function ChatPane({ conversation: initial }: Props) {
       <MessageList
         messages={messages}
         onRetry={() => void retry()}
+        onSuggest={(text) => void handleSend(text, [])}
       />
 
       {/* Composer */}
