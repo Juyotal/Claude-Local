@@ -8,3 +8,13 @@ Object.defineProperty(navigator, "clipboard", {
   },
   writable: true,
 });
+
+// jsdom doesn't implement scrollTo on elements
+Element.prototype.scrollTo = vi.fn() as unknown as typeof Element.prototype.scrollTo;
+
+// Radix UI components (ScrollArea, etc.) use ResizeObserver
+global.ResizeObserver = class ResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};

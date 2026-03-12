@@ -61,7 +61,6 @@ function AttachmentPills({ attachments }: { attachments: AttachmentOut[] }) {
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            role="listitem"
             title={`${a.filename} (${formatBytes(a.size_bytes)})`}
             className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-2 py-1 text-xs text-primary-foreground/80 hover:bg-primary/20 transition-colors max-w-[180px]"
           >

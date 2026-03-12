@@ -27,7 +27,7 @@ describe("Composer", () => {
     await userEvent.type(textarea, "Hello world");
     await userEvent.keyboard("{Enter}");
 
-    expect(onSend).toHaveBeenCalledWith("Hello world");
+    expect(onSend).toHaveBeenCalledWith("Hello world", []);
     expect(textarea).toHaveValue("");
   });
 
@@ -59,7 +59,7 @@ describe("Composer", () => {
     await userEvent.type(textarea, "  spaced  ");
     await userEvent.keyboard("{Enter}");
 
-    expect(onSend).toHaveBeenCalledWith("spaced");
+    expect(onSend).toHaveBeenCalledWith("spaced", []);
   });
 
   it("shows Stop button instead of Send while streaming", () => {
