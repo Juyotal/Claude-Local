@@ -96,16 +96,20 @@ export default function Sidebar() {
   }
 
   async function handleDelete(conv: ConversationOut) {
-    // Optimistic remove
     const snapshot = conversations;
-    setConversations((prev) => prev.filter((c) => c.id !== conv.id));
+    const remaining = conversations.filter((c) => c.id !== conv.id);
+    setConversations(remaining);
 
     try {
       await deleteConversation(conv.id);
-      if (activeId === conv.id) router.push("/");
+      if (activeId === conv.id) {
+        // Navigate to another conversation if one exists, otherwise let the
+        // root redirect handle the empty state (which will create a new one).
+        router.push(remaining.length > 0 ? `/c/${remaining[0].id}` : "/");
+      }
     } catch (err) {
       console.error("Failed to delete conversation", err);
-      setConversations(snapshot); // rollback
+      setConversations(snapshot);
     } finally {
       setDeleteTarget(null);
     }
